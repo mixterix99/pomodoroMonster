@@ -41,6 +41,7 @@ dependencies:
   # Gráficos circulares para el Timer
   percent_indicator: ^4.2.3
   audioplayers: ^6.0.0
+  google_mobile_ads: ^5.0.0
 
 dev_dependencies:
   flutter_test:

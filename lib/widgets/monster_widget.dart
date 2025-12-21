@@ -72,40 +72,32 @@ class _MonsterWidgetState extends State<MonsterWidget>
   }
 
   Widget _buildContent(TimerService service, Pet pet) {
-    // 1. MUERTE 💀 (Esta imagen es global o podría ser por mascota)
     if (service.state == TimerState.dead) {
       return _animateFloating(
         Image.asset('assets/images/ghost.png', fit: BoxFit.contain),
       );
     }
-
-    // 2. TRANSICIÓN: ECLOSIÓN 🥚💥
     if (service.state == TimerState.hatching) {
-      // Podrías tener un huevo roto específico por mascota (pet.assetBrokenEgg)
-      // Por ahora usaremos el genérico o el huevo normal temblando fuerte
       return _animateShake(
         Image.asset('assets/images/broken_egg.png', fit: BoxFit.contain),
       );
     }
-
-    // 3. TRANSICIÓN: LEVEL UP ✨
     if (service.state == TimerState.levelUp) {
-      return _animateBreathAndJump(
-        Image.asset(pet.assetAdult, fit: BoxFit.contain),
-      );
+      // Si sube de nivel, mostramos la versión actual saltando feliz
+      String asset = service.evolutionStage >= 2
+          ? pet.assetAdult
+          : (service.evolutionStage == 1 ? pet.assetBaby : pet.assetEgg);
+      return _animateBreathAndJump(Image.asset(asset, fit: BoxFit.contain));
     }
 
-    // 4. ESTADO NORMAL
-    if (service.level == 0) {
-      // HUEVO ESPECÍFICO DE LA MASCOTA
+    // USAMOS evolutionStage (0, 1, 2) EN LUGAR DE level
+    if (service.evolutionStage == 0) {
       return _animateWobble(Image.asset(pet.assetEgg, fit: BoxFit.contain));
-    } else if (service.level == 1) {
-      // BEBÉ ESPECÍFICO
+    } else if (service.evolutionStage == 1) {
       return _animateBreathAndJump(
         Image.asset(pet.assetBaby, fit: BoxFit.contain),
       );
     } else {
-      // ADULTO ESPECÍFICO
       return _animateBreathAndJump(
         Image.asset(pet.assetAdult, fit: BoxFit.contain),
       );

@@ -13,7 +13,7 @@ class GameData {
       assetEgg: 'assets/images/pet_classic_egg.png',
       assetBaby: 'assets/images/pet_classic_baby.png',
       assetAdult: 'assets/images/pet_classic_adult.png',
-      priceCoins: 0,
+      priceCoins: 150,
     ),
     // 2. FUEGO (Costoso en monedas)
     Pet(
@@ -33,7 +33,7 @@ class GameData {
       assetEgg: 'assets/images/pet_water_egg.png',
       assetBaby: 'assets/images/pet_water_baby.png',
       assetAdult: 'assets/images/pet_water_adult.png',
-      priceCoins: 300,
+      priceCoins: 350,
     ),
     // 4. PLANTA (Barato)
     Pet(
@@ -64,7 +64,9 @@ class GameData {
       id: 'space',
       name: 'Espacio Profundo',
       primaryColor: Colors.orangeAccent,
-      backgroundColor: Color(0xFF1A1A2E), // Azul oscuro
+      backgroundColor: Color(0xFF1A1A2E),
+      backgroundAsset: 'assets/images/bg_space.png', // <--- Imagen Fondo
+      soundAsset: 'assets/audio/espacio.mp3', // Azul oscuro
       isFree: true,
     ),
     // 2. BIBLIOTECA (Café/Beige)
@@ -73,7 +75,9 @@ class GameData {
       name: 'Biblioteca Antigua',
       primaryColor: Color(0xFF8D6E63), // Marrón suave
       backgroundColor: Color(0xFF3E2723), // Marrón oscuro
-      textColor: Color(0xFFFFECB3), // Crema
+      textColor: Color(0xFFFFECB3),
+      backgroundAsset: 'assets/images/bg_biblio.png', // <--- Imagen Fondo
+      soundAsset: 'assets/audio/libreria.mp3', // Crema
       isFree: true,
     ),
     // 3. PLAYA (Cyan/Amarillo)
@@ -81,7 +85,9 @@ class GameData {
       id: 'beach',
       name: 'Playa Relax',
       primaryColor: Colors.cyanAccent,
-      backgroundColor: Color(0xFF006064), // Cyan oscuro
+      backgroundColor: Color(0xFF006064),
+      backgroundAsset: 'assets/images/bg_beach.png', // <--- Imagen Fondo
+      soundAsset: 'assets/audio/playa.mp3', // Cyan oscuro
       isFree: true,
     ),
     // 4. VOLCÁN (Rojo/Negro)
@@ -89,8 +95,24 @@ class GameData {
       id: 'volcano',
       name: 'Cueva de Lava',
       primaryColor: Colors.redAccent,
-      backgroundColor: Color(0xFF210000), // Rojo muy oscuro
+      backgroundColor: Color(0xFF210000),
+      backgroundAsset: 'assets/images/bg_fire.png', // <--- Imagen Fondo
+      soundAsset: 'assets/audio/robo.mp3', // Rojo muy oscuro
       priceCoins: 200, // Este cuesta monedas desbloquearlo
+    ),
+    AppTheme(
+      id: 'cyber',
+      name: 'Futuro Neón',
+      primaryColor: Colors.greenAccent, // Botones y barras verde neón
+      backgroundColor: Color(0xFF050505), // Negro casi puro
+      textColor: Color(
+        0xFFB9FBC0,
+      ), // Texto verde muy pálido (tipo terminal antigua)
+      backgroundAsset: 'assets/images/bg_robo.png',
+      soundAsset:
+          'assets/audio/robo.mp3', // Sonido sugerido: Synthesizer o ruido eléctrico
+      priceCoins: 500, // Este tema cuesta monedas desbloquearlo
+      isFree: false, // No es gratis
     ),
   ];
 
