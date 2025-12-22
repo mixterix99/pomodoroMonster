@@ -23,7 +23,7 @@ class GameData {
       assetEgg: 'assets/images/pet_fire_egg.png',
       assetBaby: 'assets/images/pet_fire_baby.png',
       assetAdult: 'assets/images/pet_fire_adult.png',
-      priceCoins: 500, // 500 minutos de estudio
+      priceCoins: 750, // 500 minutos de estudio
     ),
     // 3. AGUA (Medio)
     Pet(
@@ -53,7 +53,8 @@ class GameData {
       assetEgg: 'assets/images/pet_robo_egg.png',
       assetBaby: 'assets/images/pet_robo_baby.png',
       assetAdult: 'assets/images/pet_robo_adult.png',
-      isPremium: true, // $$$
+      isPremium: false,
+      priceCoins: 500, // $$$
     ),
   ];
 

@@ -5,9 +5,11 @@ import 'services/timer_service.dart';
 import 'services/ad_service.dart'; // <--- IMPORTAR
 import 'screens/timer_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   await Hive.initFlutter();
   await Hive.openBox('focus_data');
 
@@ -33,7 +35,7 @@ class FocusMonsterApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'FocusMonster',
+      title: 'Focus Monster',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),

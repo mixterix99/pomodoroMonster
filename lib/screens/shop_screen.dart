@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:purchases_flutter/purchases_flutter.dart'; // <--- Importante para IAP
+
+// Servicios y Modelos
 import '../services/timer_service.dart';
 import '../services/ad_service.dart';
+import '../services/purchase_service.dart'; // <--- Tu servicio de RevenueCat
 import '../data/game_data.dart';
 import '../models/pet_model.dart';
 import '../models/theme_model.dart';
@@ -75,14 +79,20 @@ class ShopScreen extends StatelessWidget {
           ),
         ),
         body: const TabBarView(
-          children: [_PetsTab(), _ThemesTab(), _CoinsTab()],
+          children: [
+            _PetsTab(),
+            _ThemesTab(), // <--- Actualizada
+            _CoinsTab(),
+          ],
         ),
       ),
     );
   }
 }
 
-// --- PESTAÑA 1: MASCOTAS + ADS (LÓGICA ACTUALIZADA) ---
+// ============================================================================
+// PESTAÑA 1: MASCOTAS + ADS (Video Reward)
+// ============================================================================
 class _PetsTab extends StatelessWidget {
   const _PetsTab();
 
@@ -100,12 +110,11 @@ class _PetsTab extends StatelessWidget {
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
       ),
-      itemCount: pets.length + 1,
+      itemCount: pets.length + 1, // +1 por el botón de anuncios
       itemBuilder: (context, index) {
-        // --- 1. TARJETA DE RECOMPENSA (INDEX 0) ---
+        // --- TARJETA DE RECOMPENSA (Posición 0) ---
         if (index == 0) {
-          // Verificamos si tiene permitido ver anuncios hoy
-          bool canWatch = service.canWatchAd;
+          bool canWatch = service.canWatchAd; // Verifica límite diario
           int adsLeft = service.maxDailyAds - service.adsWatchedToday;
 
           return _AdRewardCard(
@@ -115,24 +124,18 @@ class _PetsTab extends StatelessWidget {
               if (!canWatch) return;
 
               adService.showRewarded(() {
-                // Callback si ve el video completo
+                // Callback de éxito: usuario vio todo el video
                 bool success = service.tryAddRewardCoins(15);
                 if (success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      backgroundColor: Colors.amber,
-                      content: Text("¡+15 Monedas recibidas! 💰"),
-                    ),
-                  );
+                  _showSuccess(context, "¡+15 Monedas recibidas! 💰");
                 }
               });
             },
           );
         }
 
-        // --- 2. TARJETAS DE MASCOTAS ---
+        // --- TARJETAS DE MASCOTAS ---
         final pet = pets[index - 1];
-
         final isUnlocked = service.unlockedPetIds.contains(pet.id);
         final isEquipped = service.equippedPetId == pet.id;
         final canAfford = service.coins >= pet.priceCoins;
@@ -146,6 +149,7 @@ class _PetsTab extends StatelessWidget {
           isPremium: pet.isPremium,
           onAction: () {
             if (isEquipped) return;
+
             if (isUnlocked) {
               service.equipPet(pet.id);
             } else if (pet.isPremium) {
@@ -153,9 +157,11 @@ class _PetsTab extends StatelessWidget {
                 const SnackBar(content: Text("💎 Próximamente...")),
               );
             } else {
+              // Intento de compra
               if (canAfford) {
-                if (service.buyPet(pet.id, pet.priceCoins))
+                if (service.buyPet(pet.id, pet.priceCoins)) {
                   _showSuccess(context, "¡Bienvenido ${pet.name}!");
+                }
               } else {
                 _showError(context, "Te faltan monedas");
               }
@@ -167,7 +173,9 @@ class _PetsTab extends StatelessWidget {
   }
 }
 
-// --- PESTAÑA 2: TEMAS ---
+// ============================================================================
+// PESTAÑA 2: TEMAS (ACTUALIZADA)
+// ============================================================================
 class _ThemesTab extends StatelessWidget {
   const _ThemesTab();
 
@@ -175,6 +183,7 @@ class _ThemesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final service = Provider.of<TimerService>(context);
     final themes = GameData.themes;
+    const int premiumPrice = 500; // PRECIO FIJO DEFINIDO
 
     return GridView.builder(
       padding: const EdgeInsets.all(16),
@@ -189,26 +198,40 @@ class _ThemesTab extends StatelessWidget {
         final theme = themes[index];
         final isEquipped = service.equippedThemeId == theme.id;
 
-        // Asumimos que los temas 'Free' están desbloqueados.
-        // Si implementas compra de temas, usa lógica similar a mascotas.
-        bool isUnlocked = theme.isFree;
+        // Un tema está desbloqueado si es GRATIS o si está en la lista de comprados
+        bool isUnlocked =
+            theme.isFree || service.unlockedThemeIds.contains(theme.id);
 
         return _ShopCard(
           title: theme.name,
-          subtitle: theme.isFree ? "Gratis" : "${theme.priceCoins} 💰",
+          // Muestra "Gratis/Adquirido" o el precio "500"
+          subtitle: isUnlocked
+              ? (theme.isFree ? "Gratis" : "Adquirido")
+              : "$premiumPrice 💰",
           imageAsset: theme.backgroundAsset ?? "",
           isUnlocked: isUnlocked,
           isEquipped: isEquipped,
           isPremium: !theme.isFree,
           onAction: () {
-            if (theme.isFree) {
+            // 1. Si ya está equipado, nada
+            if (isEquipped) return;
+
+            // 2. Si está desbloqueado, equipar
+            if (isUnlocked) {
               service.equipTheme(theme.id);
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("🔒 Desbloqueo de temas premium próximamente"),
-                ),
-              );
+            }
+            // 3. Si está bloqueado, intentar comprar
+            else {
+              if (service.coins >= premiumPrice) {
+                // LLAMADA AL SERVICIO PARA COMPRAR
+                if (service.buyTheme(theme.id, premiumPrice)) {
+                  _showSuccess(context, "¡Tema desbloqueado! 🎨");
+                } else {
+                  _showError(context, "Error al comprar");
+                }
+              } else {
+                _showError(context, "Necesitas $premiumPrice monedas");
+              }
             }
           },
         );
@@ -217,40 +240,98 @@ class _ThemesTab extends StatelessWidget {
   }
 }
 
-// --- PESTAÑA 3: PAQUETES DE MONEDAS (UI PREPARADA) ---
-class _CoinsTab extends StatelessWidget {
+// ============================================================================
+// PESTAÑA 3: MONEDAS (RevenueCat Integration)
+// ============================================================================
+class _CoinsTab extends StatefulWidget {
   const _CoinsTab();
+  @override
+  State<_CoinsTab> createState() => _CoinsTabState();
+}
+
+class _CoinsTabState extends State<_CoinsTab> {
+  final PurchaseService _purchaseService = PurchaseService();
+  List<Package> _packages = [];
+  bool _isLoading = true;
+  String _statusMessage = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _initStore();
+  }
+
+  Future<void> _initStore() async {
+    try {
+      await _purchaseService.initialize();
+      final offers = await _purchaseService.fetchOffers();
+
+      if (mounted) {
+        setState(() {
+          _packages = offers;
+          // Ordenar por precio (de menor a mayor)
+          _packages.sort(
+            (a, b) => a.storeProduct.price.compareTo(b.storeProduct.price),
+          );
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _statusMessage = "Error cargando tienda.";
+        });
+      }
+      print("Error Store: $e");
+    }
+  }
+
+  // Mapa visual: Relaciona el ID del paquete en RevenueCat con Colores/Texto
+  Map<String, dynamic> _getPackageVisuals(String packageId) {
+    if (packageId == 'pack_small') {
+      return {"coins": 50, "color": Colors.amber[300], "tag": null};
+    } else if (packageId == 'pack_medium') {
+      return {"coins": 250, "color": Colors.amber[500], "tag": "POPULAR"};
+    } else if (packageId == 'pack_large') {
+      return {"coins": 600, "color": Colors.amber[700], "tag": "MEJOR VALOR"};
+    }
+    // Fallback por si cambia el ID
+    return {"coins": 0, "color": Colors.grey, "tag": null};
+  }
 
   @override
   Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> coinPacks = [
-      {
-        "coins": 25,
-        "price": "US\$ 1.99",
-        "color": Colors.amber[300],
-        "id": "coins_100",
-      },
-      {
-        "coins": 50,
-        "price": "US\$ 2.99",
-        "color": Colors.amber[500],
-        "id": "coins_500",
-        "tag": "POPULAR",
-      },
-      {
-        "coins": 150,
-        "price": "US\$ 4.99",
-        "color": Colors.amber[700],
-        "id": "coins_1200",
-        "tag": "MEJOR VALOR",
-      },
-    ];
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.orangeAccent),
+      );
+    }
+
+    if (_packages.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Text(
+            "No hay ofertas disponibles.\nRevisa tu conexión o la configuración de RevenueCat.\n$_statusMessage",
+            style: const TextStyle(color: Colors.white54),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: coinPacks.length,
+      itemCount: _packages.length,
       itemBuilder: (context, index) {
-        final pack = coinPacks[index];
+        final package = _packages[index];
+        final product = package.storeProduct;
+
+        // Obtener visuales según el ID del paquete (pack_small, etc.)
+        final visuals = _getPackageVisuals(package.identifier);
+        final int coinsAmount = visuals["coins"] as int;
+
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
           padding: const EdgeInsets.all(16),
@@ -261,24 +342,27 @@ class _CoinsTab extends StatelessWidget {
           ),
           child: Row(
             children: [
+              // ICONO VISUAL
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: (pack["color"] as Color).withOpacity(0.2),
+                  color: (visuals["color"] as Color).withOpacity(0.2),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   Icons.monetization_on,
-                  color: pack["color"],
+                  color: visuals["color"],
                   size: 32,
                 ),
               ),
               const SizedBox(width: 16),
+
+              // INFO DEL PAQUETE
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (pack.containsKey("tag"))
+                    if (visuals["tag"] != null)
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -290,7 +374,7 @@ class _CoinsTab extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          pack["tag"],
+                          visuals["tag"],
                           style: const TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
@@ -299,16 +383,27 @@ class _CoinsTab extends StatelessWidget {
                         ),
                       ),
                     Text(
-                      "${pack["coins"]} Monedas",
+                      "$coinsAmount Monedas",
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
                       ),
                     ),
+                    Text(
+                      product.description,
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 10,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
               ),
+
+              // BOTÓN DE PRECIO (Google Play)
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
@@ -316,16 +411,39 @@ class _CoinsTab extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                 ),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("💳 Conexión con Store próximamente..."),
-                    ),
+                onPressed: () async {
+                  // 1. Ejecutar compra en RevenueCat
+                  bool success = await _purchaseService.purchasePackage(
+                    package,
                   );
+
+                  if (success && context.mounted) {
+                    // 2. Dar monedas al usuario
+                    final timerService = Provider.of<TimerService>(
+                      context,
+                      listen: false,
+                    );
+
+                    // Usamos addRewardCoins pero sin límite diario (porque está pagando)
+                    timerService.addRewardCoins(coinsAmount);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        backgroundColor: Colors.green,
+                        content: Text(
+                          "¡Compra exitosa! +$coinsAmount Monedas 💰",
+                        ),
+                      ),
+                    );
+                  }
                 },
                 child: Text(
-                  pack["price"],
+                  product.priceString,
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
@@ -337,7 +455,11 @@ class _CoinsTab extends StatelessWidget {
   }
 }
 
-// --- WIDGET TARJETA DE RECOMPENSA (ADS) CON ESTADO ---
+// ============================================================================
+// WIDGETS AUXILIARES
+// ============================================================================
+
+// Tarjeta de "Ver Video"
 class _AdRewardCard extends StatelessWidget {
   final VoidCallback onWatch;
   final bool isEnabled;
@@ -426,7 +548,7 @@ class _AdRewardCard extends StatelessWidget {
   }
 }
 
-// --- WIDGET TARJETA ESTÁNDAR ---
+// Tarjeta Estándar de Producto (Mascota/Tema)
 class _ShopCard extends StatelessWidget {
   final String title, subtitle, imageAsset;
   final bool isUnlocked, isEquipped, isPremium;
@@ -527,9 +649,15 @@ class _ShopCard extends StatelessWidget {
   }
 }
 
-void _showSuccess(BuildContext context, String msg) => ScaffoldMessenger.of(
-  context,
-).showSnackBar(SnackBar(backgroundColor: Colors.green, content: Text(msg)));
-void _showError(BuildContext context, String msg) => ScaffoldMessenger.of(
-  context,
-).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text(msg)));
+// Helpers para mensajes
+void _showSuccess(BuildContext context, String msg) {
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(backgroundColor: Colors.green, content: Text(msg)));
+}
+
+void _showError(BuildContext context, String msg) {
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text(msg)));
+}

@@ -1,4 +1,4 @@
-package com.example.focus_monster
+package com.diegopolo.focus_monster
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -1,12 +1,11 @@
-import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'timer_service.dart'; // Para dar las recompensas
+// Para dar las recompensas
 
 class AdService {
   // IDs DE PRUEBA OFICIALES DE GOOGLE (ANDROID/IOS)
   // ¡No uses estos en producción!
-  final String _interstitialId = 'ca-app-pub-3940256099942544/1033173712';
-  final String _rewardedId = 'ca-app-pub-3940256099942544/5224354917';
+  final String _interstitialId = 'ca-app-pub-5479522990707049/6352917593';
+  final String _rewardedId = 'ca-app-pub-5479522990707049/8293503462';
 
   InterstitialAd? _interstitialAd;
   RewardedAd? _rewardedAd;

@@ -21,19 +21,16 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   // ====================================================================
 
   // --- A. MODO PRODUCCIÓN (REAL) ---
-  // (Descomenta esto cuando vayas a publicar la App)
+  static const int _secondsForBaby = 25 * 60; // 25 min para nacer
+  static const int _secondsForAdult = 8 * 60 * 60; // 8 horas para ser Adulto
+  static const int _secondsPerUserLevel = 4 * 60 * 60; // 4 horas por Nivel
+
   /*
-  static const int _secondsForBaby = 25 * 60;        // 25 min para nacer
-  static const int _secondsForAdult = 8 * 60 * 60;   // 8 horas para ser Adulto
-  static const int _secondsPerUserLevel = 4 * 60 * 60; // 4 horas por Nivel de Usuario
+  // --- B. MODO DEBUG (PRUEBAS RÁPIDAS - DESCOMENTAR PARA TESTEAR) ---
+  static const int _secondsForBaby = 10; 
+  static const int _secondsForAdult = 30; 
+  static const int _secondsPerUserLevel = 20; 
   */
-
-  // --- B. MODO DEBUG (PRUEBAS RÁPIDAS) ---
-  // (Usa esto ahora para ver cambios en segundos)
-  static const int _secondsForBaby = 10; // 10 seg para nacer
-  static const int _secondsForAdult = 30; // 30 seg para ser Adulto
-  static const int _secondsPerUserLevel = 20; // 20 seg por Nivel de Usuario
-
   // ====================================================================
 
   // Dependencias
@@ -41,8 +38,8 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   // Variables de Estado del Timer
-  int _selectedDuration = 5;
-  int _currentSeconds = 5;
+  int _selectedDuration = 0;
+  int _currentSeconds = 0;
   Timer? _timer;
   TimerState _state = TimerState.initial;
 
@@ -53,16 +50,24 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   // Variables de Personalización e Inventario
   String _equippedPetId = 'classic';
   String _equippedThemeId = 'space';
+
+  // Listas de desbloqueados
   List<String> _unlockedPetIds = ['classic'];
+  List<String> _unlockedThemeIds = ['space'];
 
   // Configuración
   bool _isMuted = false;
   bool _isFirstTime = true; // Control de Onboarding
 
-  // --- VARIABLES DE LÍMITE DE ANUNCIOS (NUEVO) ---
+  // --- VARIABLES DE LÍMITE DE ANUNCIOS (Monedas) ---
   int _adsWatchedToday = 0;
   DateTime _lastAdDate = DateTime.now();
-  static const int _maxDailyAds = 2; // Límite de 2 videos al día
+  static const int _maxDailyAds = 2;
+
+  // --- VARIABLES DE LÍMITE DE REVIVIR ---
+  int _revivalsUsedToday = 0;
+  DateTime _lastRevivalDate = DateTime.now();
+  static const int _maxDailyRevivals = 2;
 
   // Lógica de Muerte (Background)
   Timer? _deathTimer;
@@ -82,27 +87,31 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
 
   String get equippedPetId => _equippedPetId;
   String get equippedThemeId => _equippedThemeId;
+
   List<String> get unlockedPetIds => _unlockedPetIds;
+  List<String> get unlockedThemeIds => _unlockedThemeIds;
 
   // Getters de Anuncios
   int get adsWatchedToday => _adsWatchedToday;
   int get maxDailyAds => _maxDailyAds;
   bool get canWatchAd => _adsWatchedToday < _maxDailyAds;
 
+  // Getters de Revivir
+  int get revivalsUsedToday => _revivalsUsedToday;
+  int get maxDailyRevivals => _maxDailyRevivals;
+  bool get canRevive => _revivalsUsedToday < _maxDailyRevivals;
+
   double get progress =>
       _selectedDuration == 0 ? 0 : 1 - (_currentSeconds / _selectedDuration);
 
-  // 1. CÁLCULO DE NIVEL DE USUARIO (Infinito)
   int get userLevel => (_totalTimeFocused / _secondsPerUserLevel).floor();
 
-  // 2. CÁLCULO DE FASE DE MASCOTA (0=Huevo, 1=Bebé, 2=Adulto)
   int get evolutionStage {
     if (_totalTimeFocused >= _secondsForAdult) return 2;
     if (_totalTimeFocused >= _secondsForBaby) return 1;
     return 0;
   }
 
-  // 3. TÍTULO DEL USUARIO (Rango basado en nivel) 🎖️
   String get userTitle {
     int lvl = userLevel;
     if (lvl < 10) return "Novato 🌱";
@@ -113,7 +122,6 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
     return "Doctor en Focus 🏆";
   }
 
-  // 4. BARRA DE XP (Progreso hacia el SIGUIENTE nivel)
   double get xpProgress {
     int currentLevelSeconds = userLevel * _secondsPerUserLevel;
     int secondsInThisLevel = _totalTimeFocused - currentLevelSeconds;
@@ -121,13 +129,13 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   // --------------------------------------------------------------------
-  // INICIALIZACIÓN Y PERSISTENCIA (HIVE)
+  // INICIALIZACIÓN Y PERSISTENCIA
   // --------------------------------------------------------------------
 
   TimerService() {
     WidgetsBinding.instance.addObserver(this);
     _loadData();
-    _audioPlayer.setReleaseMode(ReleaseMode.loop); // Audio en bucle
+    _audioPlayer.setReleaseMode(ReleaseMode.loop);
   }
 
   void _loadData() {
@@ -135,23 +143,33 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
     _coins = _box.get('coins', defaultValue: 0);
     _equippedPetId = _box.get('equippedPetId', defaultValue: 'classic');
     _equippedThemeId = _box.get('equippedThemeId', defaultValue: 'space');
+
     _unlockedPetIds = List<String>.from(
       _box.get('unlockedPetIds', defaultValue: ['classic']),
     );
+
+    _unlockedThemeIds = List<String>.from(
+      _box.get('unlockedThemeIds', defaultValue: ['space']),
+    );
+
     _isMuted = _box.get('isMuted', defaultValue: false);
     _isFirstTime = _box.get('isFirstTime', defaultValue: true);
 
-    // Carga de datos de anuncios
     _adsWatchedToday = _box.get('adsWatchedToday', defaultValue: 0);
     String? dateStr = _box.get('lastAdDate');
     _lastAdDate = dateStr != null ? DateTime.parse(dateStr) : DateTime.now();
 
-    // Verificar si es un nuevo día para resetear anuncios
+    _revivalsUsedToday = _box.get('revivalsUsedToday', defaultValue: 0);
+    String? revivalDateStr = _box.get('lastRevivalDate');
+    _lastRevivalDate = revivalDateStr != null
+        ? DateTime.parse(revivalDateStr)
+        : DateTime.now();
+
     _checkDailyReset();
 
-    // Si es onboarding, asegurar que la lista empiece limpia
     if (_isFirstTime) {
       _unlockedPetIds = [];
+      _unlockedThemeIds = [];
     }
 
     notifyListeners();
@@ -162,26 +180,38 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
     _box.put('coins', _coins);
     _box.put('equippedPetId', _equippedPetId);
     _box.put('equippedThemeId', _equippedThemeId);
+
     _box.put('unlockedPetIds', _unlockedPetIds);
+    _box.put('unlockedThemeIds', _unlockedThemeIds);
+
     _box.put('isMuted', _isMuted);
     _box.put('isFirstTime', _isFirstTime);
 
-    // Guardar datos de anuncios
     _box.put('adsWatchedToday', _adsWatchedToday);
     _box.put('lastAdDate', _lastAdDate.toIso8601String());
+
+    _box.put('revivalsUsedToday', _revivalsUsedToday);
+    _box.put('lastRevivalDate', _lastRevivalDate.toIso8601String());
   }
 
-  // Lógica de reinicio diario de anuncios
   void _checkDailyReset() {
     final now = DateTime.now();
-    if (now.day != _lastAdDate.day ||
-        now.month != _lastAdDate.month ||
-        now.year != _lastAdDate.year) {
+
+    if (!_isSameDay(now, _lastAdDate)) {
       _adsWatchedToday = 0;
       _lastAdDate = now;
-      _saveData();
-      print("📅 ¡Nuevo día! Contador de anuncios reiniciado.");
     }
+
+    if (!_isSameDay(now, _lastRevivalDate)) {
+      _revivalsUsedToday = 0;
+      _lastRevivalDate = now;
+    }
+
+    _saveData();
+  }
+
+  bool _isSameDay(DateTime d1, DateTime d2) {
+    return d1.day == d2.day && d1.month == d2.month && d1.year == d2.year;
   }
 
   @override
@@ -194,29 +224,22 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   // --------------------------------------------------------------------
-  // LÓGICA DE ONBOARDING (PRIMERA VEZ)
+  // ONBOARDING
   // --------------------------------------------------------------------
-
   void completeOnboarding(String pickedPetId, String pickedThemeId) {
-    // 1. Desbloqueamos y equipamos SOLO lo elegido
     _unlockedPetIds = [pickedPetId];
+    _unlockedThemeIds = [pickedThemeId];
     _equippedPetId = pickedPetId;
     _equippedThemeId = pickedThemeId;
-
-    // 2. Ya no es primera vez
     _isFirstTime = false;
-
-    // 3. Regalo de bienvenida (50 monedas)
     _coins = 50;
-
     _saveData();
     notifyListeners();
   }
 
   // --------------------------------------------------------------------
-  // LÓGICA DE AUDIO
+  // AUDIO
   // --------------------------------------------------------------------
-
   void toggleMute() {
     _isMuted = !_isMuted;
     if (_isMuted) {
@@ -230,7 +253,6 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _playAmbientSound() async {
     if (_isMuted) return;
-
     try {
       final theme = GameData.getThemeById(_equippedThemeId);
       if (theme.soundAsset != null) {
@@ -247,9 +269,8 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   // --------------------------------------------------------------------
-  // DETECCIÓN DE FONDO (MUERTE SÚBITA)
+  // MUERTE SÚBITA
   // --------------------------------------------------------------------
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_state != TimerState.running) return;
@@ -257,7 +278,6 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused) {
       _isBackground = true;
       _stopAmbientSound();
-
       _deathTimer = Timer(const Duration(seconds: 10), () {
         if (_isBackground) _killPet();
       });
@@ -269,9 +289,8 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   // --------------------------------------------------------------------
-  // LÓGICA PRINCIPAL DEL TIMER
+  // TIMER PRINCIPAL
   // --------------------------------------------------------------------
-
   void setDuration(int seconds) {
     if (_state == TimerState.running) return;
     _selectedDuration = seconds;
@@ -281,7 +300,6 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
 
   void startTimer() {
     if (_state == TimerState.running) return;
-
     _currentSeconds = _selectedDuration;
     _state = TimerState.running;
     _playAmbientSound();
@@ -297,6 +315,7 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
+  // --- MÉTODO FALTANTE CORREGIDO ---
   void startTimerDefault() {
     startTimer();
   }
@@ -304,15 +323,12 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   void _handleTimerComplete() {
     _stopAmbientSound();
     _timer?.cancel();
-
     int previousStage = evolutionStage;
     int previousLevel = userLevel;
-
     _totalTimeFocused += _selectedDuration;
 
-    // --- LÓGICA ANTI-TRAMPA Y MONEDAS ---
     bool isValidForCoins = _selectedDuration >= 300;
-    if (_secondsPerUserLevel < 100) isValidForCoins = true; // Hack debug
+    if (_secondsPerUserLevel < 100) isValidForCoins = true;
 
     if (isValidForCoins) {
       int earnedCoins = (_selectedDuration / 60).ceil();
@@ -323,10 +339,8 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
 
     int newStage = evolutionStage;
     int newLevel = userLevel;
-
     _saveData();
 
-    // --- SELECCIÓN DE ANIMACIÓN ---
     if (previousStage == 0 && newStage == 1) {
       _state = TimerState.hatching;
       notifyListeners();
@@ -351,25 +365,16 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
     _stopAmbientSound();
     _timer?.cancel();
     _state = TimerState.dead;
-    _totalTimeFocused = 0;
     _currentSeconds = _selectedDuration;
     _saveData();
     notifyListeners();
   }
 
   // --------------------------------------------------------------------
-  // REINICIOS Y NAVEGACIÓN
+  // REINICIOS Y REVIVIR
   // --------------------------------------------------------------------
 
-  void revivePet() {
-    _timer?.cancel();
-    _currentSeconds = _selectedDuration;
-    _state = TimerState.initial;
-    _totalTimeFocused = 0;
-    _saveData();
-    notifyListeners();
-  }
-
+  // --- MÉTODO FALTANTE CORREGIDO ---
   void nextSession() {
     _timer?.cancel();
     _currentSeconds = _selectedDuration;
@@ -377,14 +382,43 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  void resetTimer() {
-    revivePet();
+  void revivePet() {
+    // Método simple de revivir (usado por el botón de castigo antiguo si hiciera falta)
+    _timer?.cancel();
+    _currentSeconds = _selectedDuration;
+    _state = TimerState.initial;
+    _saveData();
+    notifyListeners();
+  }
+
+  void revivePetWithAd() {
+    _checkDailyReset();
+
+    if (_revivalsUsedToday < _maxDailyRevivals) {
+      _revivalsUsedToday++;
+      _lastRevivalDate = DateTime.now();
+
+      _timer?.cancel();
+      _currentSeconds = _selectedDuration;
+      _state = TimerState.initial;
+
+      _saveData();
+      notifyListeners();
+    }
+  }
+
+  void acceptDeathAndReset() {
+    _timer?.cancel();
+    _currentSeconds = _selectedDuration;
+    _state = TimerState.initial;
+    _totalTimeFocused = 0; // Se pierde el progreso
+    _saveData();
+    notifyListeners();
   }
 
   // --------------------------------------------------------------------
-  // TIENDA, INVENTARIO Y RECOMPENSAS
+  // TIENDA E INVENTARIO
   // --------------------------------------------------------------------
-
   void equipPet(String petId) {
     if (_state == TimerState.running) return;
     if (_unlockedPetIds.contains(petId)) {
@@ -411,31 +445,35 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
     return false;
   }
 
-  // --- NUEVO: Sumar monedas de recompensa CON LÍMITE DIARIO ---
-  bool tryAddRewardCoins(int amount) {
-    _checkDailyReset(); // Validar día
-
-    if (canWatchAd) {
-      _coins += amount;
-      _adsWatchedToday++; // Incrementar contador diario
-      _lastAdDate = DateTime.now(); // Actualizar fecha
-
+  bool buyTheme(String themeId, int cost) {
+    if (_coins >= cost && !_unlockedThemeIds.contains(themeId)) {
+      _coins -= cost;
+      _unlockedThemeIds.add(themeId);
+      _equippedThemeId = themeId;
       _saveData();
       notifyListeners();
-      return true; // Éxito
+      return true;
+    }
+    return false;
+  }
+
+  bool tryAddRewardCoins(int amount) {
+    _checkDailyReset();
+    if (canWatchAd) {
+      _coins += amount;
+      _adsWatchedToday++;
+      _lastAdDate = DateTime.now();
+      _saveData();
+      notifyListeners();
+      return true;
     } else {
-      return false; // Fallo (Límite alcanzado)
+      return false;
     }
   }
 
-  // MODO DIOS (Debug)
-  void debugEquipPet(String petId) {
-    if (!_unlockedPetIds.contains(petId)) {
-      _unlockedPetIds.add(petId);
-      _box.put('unlockedPetIds', _unlockedPetIds);
-    }
-    _equippedPetId = petId;
-    _box.put('equippedPetId', _equippedPetId);
+  void addRewardCoins(int amount) {
+    _coins += amount;
+    _box.put('coins', _coins);
     notifyListeners();
   }
 }

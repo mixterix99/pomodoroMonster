@@ -7,11 +7,11 @@ import 'package:percent_indicator/percent_indicator.dart';
 
 // Imports de tus servicios y modelos
 import '../services/timer_service.dart';
-import '../services/ad_service.dart'; // <--- Servicio de Anuncios
+import '../services/ad_service.dart';
 import '../widgets/monster_widget.dart';
 import '../data/game_data.dart';
 import '../models/theme_model.dart';
-import 'shop_screen.dart'; // <--- Pantalla de Tienda
+import 'shop_screen.dart';
 
 class TimerScreen extends StatefulWidget {
   const TimerScreen({super.key});
@@ -26,10 +26,10 @@ class _TimerScreenState extends State<TimerScreen> {
   Timer? _bubbleTimer;
   bool _showBubble = false;
 
-  // Lógica para no repetir el anuncio múltiples veces en el mismo "finished"
+  // Lógica para no repetir el anuncio múltiples veces
   bool _hasShownAdForThisSession = false;
 
-  // Mensajes según la etapa de evolución de la mascota (0: Huevo, 1: Bebé, 2: Adulto)
+  // Mensajes según la etapa de evolución
   final Map<int, List<String>> _messagesByStage = {
     0: [
       "Concéntrate...",
@@ -69,7 +69,6 @@ class _TimerScreenState extends State<TimerScreen> {
       if (!mounted) return;
       final service = Provider.of<TimerService>(context, listen: false);
 
-      // Solo habla si está viva y no está en medio de una animación crítica
       bool canTalk =
           service.state == TimerState.running ||
           service.state == TimerState.initial ||
@@ -99,7 +98,7 @@ class _TimerScreenState extends State<TimerScreen> {
 
   // Diálogo para tiempo personalizado
   void _showCustomTimeDialog(BuildContext context) {
-    final TextEditingController _controller = TextEditingController();
+    final TextEditingController controller = TextEditingController();
 
     showDialog(
       context: context,
@@ -118,7 +117,7 @@ class _TimerScreenState extends State<TimerScreen> {
             ),
             const SizedBox(height: 10),
             TextField(
-              controller: _controller,
+              controller: controller,
               keyboardType: TextInputType.number,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
@@ -144,7 +143,7 @@ class _TimerScreenState extends State<TimerScreen> {
               backgroundColor: Colors.orangeAccent,
             ),
             onPressed: () {
-              final String input = _controller.text;
+              final String input = controller.text;
               if (input.isNotEmpty) {
                 int minutes = int.tryParse(input) ?? 0;
                 // Validación de mínimo 5 minutos
@@ -178,62 +177,112 @@ class _TimerScreenState extends State<TimerScreen> {
     final timerService = Provider.of<TimerService>(context);
     final adService = Provider.of<AdService>(context, listen: false);
 
-    // 1. OBTENER TEMA ACTUAL
     AppTheme currentTheme = GameData.getThemeById(timerService.equippedThemeId);
     Color primaryColor = currentTheme.primaryColor;
     Color textColor = currentTheme.textColor;
     final screenHeight = MediaQuery.of(context).size.height;
 
-    // 2. LÓGICA DE ANUNCIOS (INTERSTICIAL AL TERMINAR)
+    // LÓGICA DE ANUNCIOS (INTERSTICIAL AL TERMINAR)
     if (timerService.state == TimerState.finished &&
         !_hasShownAdForThisSession) {
-      // Pequeño delay para dejar ver la celebración primero
       Future.delayed(const Duration(seconds: 1), () {
         if (mounted) adService.showInterstitial();
       });
-      _hasShownAdForThisSession = true; // Evitar loop
+      _hasShownAdForThisSession = true;
     }
-    // Resetear flag cuando inicia uno nuevo
     if (timerService.state == TimerState.running) {
       _hasShownAdForThisSession = false;
     }
 
-    // 3. CONFIGURACIÓN DEL BOTÓN PRINCIPAL
+    // CONFIGURACIÓN DEL BOTÓN PRINCIPAL
     String buttonText;
     Color buttonColor;
     IconData buttonIcon;
     VoidCallback? buttonAction;
 
     if (timerService.state == TimerState.dead) {
-      buttonText = "REVIVIR (Castigo)";
-      buttonColor = Colors.grey[800]!;
-      buttonIcon = Icons.refresh;
-      buttonAction = () => timerService.revivePet();
+      // --- CASO: MUERTO (REVIVIR CON VIDEO) ---
+      int livesLeft =
+          timerService.maxDailyRevivals - timerService.revivalsUsedToday;
+
+      buttonText = "REVIVIR ❤️ ($livesLeft/${timerService.maxDailyRevivals})";
+      buttonColor = Colors.redAccent;
+      buttonIcon = Icons.play_circle_fill; // Icono de video
+
+      buttonAction = () {
+        // 1. Verificar límite diario
+        if (timerService.canRevive) {
+          // 2. Mostrar Anuncio
+          adService.showRewarded(() {
+            // Callback: Vio el video completo
+            timerService.revivePetWithAd();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                backgroundColor: Colors.green,
+                content: Text("¡Salvado! Tu racha continúa 🙌"),
+              ),
+            );
+          });
+        } else {
+          // Límite alcanzado
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Colors.red,
+              content: Text("❌ Sin vidas por hoy. Vuelve mañana."),
+            ),
+          );
+        }
+      };
     } else if (timerService.state == TimerState.finished) {
+      // CASO: TERMINADO
       buttonText = "CONTINUAR";
       buttonColor = Colors.green;
       buttonIcon = Icons.arrow_upward;
       buttonAction = () => timerService.nextSession();
     } else if (timerService.state == TimerState.running) {
+      // CASO: CORRIENDO
       buttonText = "ENFOCADO...";
       buttonColor = primaryColor.withOpacity(0.5);
       buttonIcon = Icons.timelapse;
-      buttonAction = null;
+      buttonAction = null; // Deshabilita el botón visualmente
     } else {
+      // CASO: INICIO (TimerState.initial)
       buttonText = "COMENZAR";
-      buttonColor = primaryColor;
+
+      // Verificamos si el usuario seleccionó un tiempo mayor a 0
+      bool isTimeSelected = timerService.maxSeconds > 0;
+
+      // Si es 0 (no seleccionado), el botón se ve gris
+      buttonColor = isTimeSelected ? primaryColor : Colors.grey;
       buttonIcon = Icons.play_arrow;
-      buttonAction = () => timerService.startTimerDefault();
+
+      buttonAction = () {
+        if (!isTimeSelected) {
+          // Si intenta iniciar con 00:00, mostramos alerta
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                "⚠️ Por favor, elige un tiempo de enfoque primero.",
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } else {
+          // Si hay tiempo, inicia el timer
+          timerService.startTimerDefault();
+        }
+      };
     }
 
     return Scaffold(
-      extendBodyBehindAppBar: true, // Permite que el fondo llegue hasta arriba
+      extendBodyBehindAppBar: true,
       backgroundColor: currentTheme.backgroundColor,
 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        // BOTÓN DE MUTE (Izquierda)
+        // BOTÓN DE MUTE
         leading: IconButton(
           icon: Icon(
             timerService.isMuted ? Icons.volume_off : Icons.volume_up,
@@ -242,7 +291,7 @@ class _TimerScreenState extends State<TimerScreen> {
           onPressed: () => timerService.toggleMute(),
         ),
         actions: [
-          // BOTÓN DE TIENDA 🛒 (Derecha)
+          // BOTÓN DE TIENDA
           IconButton(
             icon: Icon(
               Icons.store,
@@ -298,7 +347,7 @@ class _TimerScreenState extends State<TimerScreen> {
 
       body: Stack(
         children: [
-          // CAPA 1: IMAGEN DE FONDO
+          // CAPA 1: FONDO
           if (currentTheme.backgroundAsset != null)
             Positioned.fill(
               child: Image.asset(
@@ -307,19 +356,17 @@ class _TimerScreenState extends State<TimerScreen> {
               ),
             ),
 
-          // CAPA 2: DESENFOQUE Y OSCURECIMIENTO
+          // CAPA 2: BLUR Y OVERLAY
           Positioned.fill(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0), // Blur suave
+              filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
               child: Container(
-                color: currentTheme.backgroundColor.withOpacity(
-                  0.7,
-                ), // Overlay oscuro
+                color: currentTheme.backgroundColor.withOpacity(0.7),
               ),
             ),
           ),
 
-          // CAPA 3: CONTENIDO UI
+          // CAPA 3: UI
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -328,7 +375,7 @@ class _TimerScreenState extends State<TimerScreen> {
               ),
               child: Column(
                 children: [
-                  // HEADER: Mensaje de Estado
+                  // HEADER: Estado
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -355,7 +402,6 @@ class _TimerScreenState extends State<TimerScreen> {
                     ],
                   ),
 
-                  // Espacio ajustable (Separación Título - Monstruo)
                   const Spacer(flex: 4),
 
                   // MONSTRUO + BURBUJA
@@ -371,11 +417,10 @@ class _TimerScreenState extends State<TimerScreen> {
                             child: const MonsterWidget(),
                           ),
                         ),
-                        // Burbuja de texto animada
+                        // Burbuja animada
                         AnimatedPositioned(
                           duration: const Duration(milliseconds: 500),
                           curve: Curves.easeOutBack,
-                          // Posición ajustada para que no tape al monstruo
                           top: _showBubble ? -5 : 20,
                           child: AnimatedOpacity(
                             opacity: _showBubble ? 1.0 : 0.0,
@@ -404,7 +449,7 @@ class _TimerScreenState extends State<TimerScreen> {
                     ),
                   ),
 
-                  // BARRA DE XP Y TÍTULO DE USUARIO
+                  // XP Y TÍTULO
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 40.0,
@@ -464,14 +509,7 @@ class _TimerScreenState extends State<TimerScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _TimeButton(
-                            label: "TEST (5s)",
-                            seconds: 5,
-                            isSelected: timerService.maxSeconds == 5,
-                            activeColor: primaryColor,
-                            onTap: () => timerService.setDuration(5),
-                          ),
-                          const SizedBox(width: 10),
+                          // OPCIÓN 1: 25 MINUTOS (Pomodoro Clásico)
                           _TimeButton(
                             label: "Focus (25m)",
                             seconds: 25 * 60,
@@ -480,12 +518,21 @@ class _TimerScreenState extends State<TimerScreen> {
                             onTap: () => timerService.setDuration(25 * 60),
                           ),
                           const SizedBox(width: 10),
+                          // OPCIÓN 2: 50 MINUTOS (Sesión Larga)
+                          _TimeButton(
+                            label: "Largo (50m)",
+                            seconds: 50 * 60,
+                            isSelected: timerService.maxSeconds == 50 * 60,
+                            activeColor: primaryColor,
+                            onTap: () => timerService.setDuration(50 * 60),
+                          ),
+                          const SizedBox(width: 10),
+                          // OPCIÓN 3: PERSONALIZADO
                           _TimeButton(
                             label: "Custom",
                             seconds: 0,
-                            // Si no es ninguno de los defaults, es custom
+                            // Si no es ni 25 ni 50, es custom
                             isSelected:
-                                timerService.maxSeconds != 5 &&
                                 timerService.maxSeconds != 25 * 60 &&
                                 timerService.maxSeconds != 50 * 60,
                             activeColor: primaryColor,
@@ -522,30 +569,53 @@ class _TimerScreenState extends State<TimerScreen> {
 
                   const Spacer(flex: 3),
 
-                  // BOTÓN DE ACCIÓN
+                  // BOTÓN DE ACCIÓN PRINCIPAL Y SECUNDARIO (Si está muerto)
                   Visibility(
                     visible:
                         timerService.state != TimerState.hatching &&
                         timerService.state != TimerState.levelUp,
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: buttonAction,
-                        icon: Icon(buttonIcon),
-                        label: Text(buttonText),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: buttonColor,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          textStyle: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: buttonAction,
+                            icon: Icon(buttonIcon),
+                            label: Text(buttonText),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: buttonColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              textStyle: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+
+                        // BOTÓN SECUNDARIO (SOLO SI ESTÁ MUERTO)
+                        if (timerService.state == TimerState.dead)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10.0),
+                            child: TextButton(
+                              onPressed: () {
+                                // Reiniciar aceptando la muerte (pierde progreso)
+                                timerService.acceptDeathAndReset();
+                              },
+                              child: const Text(
+                                "Aceptar Muerte (Reiniciar)",
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   const Spacer(flex: 1),

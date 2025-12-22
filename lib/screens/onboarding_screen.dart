@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../services/timer_service.dart';
 import '../data/game_data.dart';
-import '../models/pet_model.dart';
-import '../models/theme_model.dart';
 import 'tutorial_screen.dart'; // <--- IMPORTANTE: Conexión con el Tutorial
 
 class OnboardingScreen extends StatefulWidget {
