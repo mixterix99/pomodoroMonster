@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../data/game_data.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:is_lock_screen/is_lock_screen.dart';
+import 'notification_service.dart';
 
 // Estados posibles de la app
 enum TimerState {
@@ -42,6 +45,7 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   int _currentSeconds = 0;
   Timer? _timer;
   TimerState _state = TimerState.initial;
+  DateTime? _lockTime; // Guardará la hora exacta en que se bloqueó
 
   // Variables de Progreso del Usuario
   int _totalTimeFocused = 0;
@@ -135,6 +139,7 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   TimerService() {
     WidgetsBinding.instance.addObserver(this);
     _loadData();
+    NotificationService.init();
     _audioPlayer.setReleaseMode(ReleaseMode.loop);
   }
 
@@ -272,19 +277,46 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   // MUERTE SÚBITA
   // --------------------------------------------------------------------
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
     if (_state != TimerState.running) return;
 
     if (state == AppLifecycleState.paused) {
       _isBackground = true;
       _stopAmbientSound();
-      _deathTimer = Timer(const Duration(seconds: 10), () {
-        if (_isBackground) _killPet();
-      });
+
+      bool? isLocked = await isLockScreen();
+
+      if (isLocked == true) {
+        // ✅ Se bloqueó la pantalla. Anotamos la hora exacta.
+        _lockTime = DateTime.now();
+        debugPrint("Pantalla bloqueada a las: $_lockTime");
+      } else {
+        // ❌ Salió de la app. Inicia la muerte súbita.
+        _deathTimer = Timer(const Duration(seconds: 10), () {
+          if (_isBackground) _killPet();
+        });
+      }
     } else if (state == AppLifecycleState.resumed) {
       _isBackground = false;
       _deathTimer?.cancel();
-      if (_state == TimerState.running) _playAmbientSound();
+
+      // 💡 NUEVO: Recalcular el tiempo perdido mientras estuvo bloqueado
+      if (_lockTime != null && _state == TimerState.running) {
+        final secondsPassed = DateTime.now().difference(_lockTime!).inSeconds;
+        _currentSeconds -=
+            secondsPassed; // Restamos el tiempo que pasó en la vida real
+
+        if (_currentSeconds <= 0) {
+          // Si el tiempo se acabó mientras estaba bloqueado
+          _currentSeconds = 0;
+          _handleTimerComplete();
+        }
+        _lockTime = null; // Limpiamos la variable
+      }
+
+      if (_state == TimerState.running) {
+        _playAmbientSound();
+      }
     }
   }
 
@@ -300,6 +332,11 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
 
   void startTimer() {
     if (_state == TimerState.running) return;
+    NotificationService.scheduleNotification(
+      _selectedDuration,
+      "¡Tiempo completado! 🎉",
+      "¡Entra a ver qué pasó!",
+    );
     _currentSeconds = _selectedDuration;
     _state = TimerState.running;
     _playAmbientSound();
@@ -362,10 +399,12 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _killPet() {
+    NotificationService.cancelAll();
     _stopAmbientSound();
     _timer?.cancel();
     _state = TimerState.dead;
     _currentSeconds = _selectedDuration;
+    WakelockPlus.disable();
     _saveData();
     notifyListeners();
   }

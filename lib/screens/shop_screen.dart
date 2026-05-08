@@ -7,8 +7,6 @@ import '../services/timer_service.dart';
 import '../services/ad_service.dart';
 import '../services/purchase_service.dart'; // <--- Tu servicio de RevenueCat
 import '../data/game_data.dart';
-import '../models/pet_model.dart';
-import '../models/theme_model.dart';
 
 class ShopScreen extends StatelessWidget {
   const ShopScreen({super.key});
