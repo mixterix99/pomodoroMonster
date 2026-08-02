@@ -47,7 +47,7 @@ class PurchaseService {
   Future<bool> purchasePackage(Package package) async {
     try {
       // Intentamos comprar
-      CustomerInfo customerInfo = await Purchases.purchasePackage(package);
+      await Purchases.purchase(PurchaseParams.package(package));
 
       // Si el código llega aquí sin lanzar error, la transacción fue exitosa.
       // Para consumibles (monedas), no necesitamos verificar 'entitlements.active',
